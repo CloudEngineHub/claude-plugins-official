@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       # Non-blocking by default. To enforce, set fail-on-findings: "true".
-      - uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@f846a0bcb0e721b1f93d60e8b73e91dafc4a1e87
+      - uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@b277757588871fe55b2620de8c6dfda470e2e9d8
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           policy-prompt: .github/policy/prompt.md
