@@ -26,10 +26,11 @@ jobs:
 
       # Blocking: policy failures fail the job. Loosen by removing
       # fail-on-findings if the false-positive rate is too high.
-      - uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@b277757588871fe55b2620de8c6dfda470e2e9d8
+      - uses: anthropics/claude-plugins-community/.github/actions/scan-plugins@706952a0caebac4024b4be25137ff2faa64e153b
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           policy-prompt: .github/policy/prompt.md
           fail-on-findings: "true"
           scan-all-external: ${{ inputs.scan_all || 'false' }}
+          scan-timeout-secs: "900"
           claude-cli-version: latest
