@@ -382,6 +382,22 @@
       "homepage": "https://docs.brightdata.com"
     },
     {
+      "name": "carta-investors",
+      "description": "Carta Investors plugin — skills for querying investor data, performance benchmarks, regulatory reporting, AGM deck generation, brand extraction, and more via the Carta MCP Server.",
+      "author": {
+        "name": "Carta Engineering"
+      },
+      "category": "productivity",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/carta/plugins.git",
+        "path": "plugins/carta-investors",
+        "ref": "main",
+        "sha": "5ebdea7a67b354bc6c0e39c261375cc5e81343aa"
+      },
+      "homepage": "https://carta.com"
+    },
+    {
       "name": "cds-mcp",
       "description": "AI-assisted development of SAP Cloud Application Programming Model (CAP) projects. Search CDS models and CAP documentation.",
       "author": {
