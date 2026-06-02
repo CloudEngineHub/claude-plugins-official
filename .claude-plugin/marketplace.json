@@ -800,7 +800,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/CrowdStrike/foundry-skills.git",
-        "sha": "fb25d60ecdbc0129071802dad210a65168ca55a9"
+        "sha": "f1c67acb7042af0842291b190a1b4cd2bb10a481"
       },
       "homepage": "https://github.com/CrowdStrike/foundry-skills"
     },
