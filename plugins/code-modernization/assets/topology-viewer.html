@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System topology</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --panel: #252526; --panel-2: #2d2d2d;
+    --text: #d4d4d4; --muted: #8a8a8a; --accent: #cc785c;
+    --border: #3a3a3a; --blue: #5ba0e0; --green: #6bb85a;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg);
+    color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  #map { position: absolute; inset: 0; cursor: grab; }
+  #map.dragging { cursor: grabbing; }
+
+  #hud { position: absolute; top: 12px; left: 12px; width: 280px;
+    display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; }
+  .panel h1 { font-size: 15px; color: var(--accent); margin-bottom: 2px; }
+  .panel .sub { color: var(--muted); font-size: 12px; }
+  #search { width: 100%; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel-2);
+    color: var(--text); font: inherit; outline: none; }
+  #search:focus { border-color: var(--accent); }
+  #results { max-height: 180px; overflow-y: auto; margin-top: 4px; }
+  #results div { padding: 4px 6px; border-radius: 4px; cursor: pointer;
+    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #results div:hover { background: var(--panel-2); }
+  #results .kind { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
+  .toggles label { display: flex; align-items: center; gap: 7px;
+    font-size: 13px; padding: 2px 0; cursor: pointer; }
+  .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  #flows select { width: 100%; margin-top: 4px; padding: 5px;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+
+  #sidebar { position: absolute; top: 12px; right: 12px; bottom: 12px;
+    width: 320px; overflow-y: auto; z-index: 2; display: none; }
+  #sidebar.open { display: block; }
+  #sidebar h2 { font-size: 16px; word-break: break-word; }
+  #sidebar .meta { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
+  #sidebar h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin: 12px 0 4px; }
+  #sidebar .link { color: var(--blue); cursor: pointer; display: block;
+    padding: 2px 0; font-size: 13px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  #sidebar .link:hover { color: var(--accent); }
+  #sidebar ol { padding-left: 20px; } #sidebar ol li { margin: 6px 0; font-size: 13px; }
+  #sidebar .closebtn { float: right; cursor: pointer; color: var(--muted);
+    font-size: 18px; line-height: 1; } #sidebar .closebtn:hover { color: var(--text); }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 9px;
+    font-size: 11px; border: 1px solid var(--border); color: var(--muted); margin-right: 4px; }
+  .badge.entry { border-color: var(--accent); color: var(--accent); }
+
+  #hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    color: var(--muted); font-size: 12px; z-index: 2; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; }
+  #err { position: absolute; inset: 0; display: none; place-items: center; z-index: 9; }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+
+<div id="hud">
+  <div class="panel">
+    <h1 id="title">System topology</h1>
+    <div class="sub" id="stats"></div>
+  </div>
+  <div class="panel">
+    <input id="search" type="search" placeholder="Search modules, stores, jobs…" autocomplete="off">
+    <div id="results"></div>
+  </div>
+  <div class="panel toggles" id="toggles"></div>
+  <div class="panel" id="flows" style="display:none">
+    <div class="sub">Business flow walkthrough</div>
+    <select id="flowSel"><option value="">— none —</option></select>
+  </div>
+  <details class="panel" id="obs" style="display:none">
+    <summary style="cursor:pointer;color:var(--muted);font-size:12px">Architect observations</summary>
+    <ul id="obsList" style="padding-left:18px;margin-top:6px;font-size:12.5px"></ul>
+  </details>
+</div>
+
+<aside id="sidebar" class="panel"></aside>
+<div id="hint">scroll to zoom · drag to pan · click a node · double-click to zoom in · Esc to reset</div>
+<div id="err" class="panel"><p>No topology data found in this file.<br>
+Re-run <code>/modernize-map</code> to regenerate it.</p></div>
+
+<script type="module">
+import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+
+// Injected by /modernize-map: the contents of topology.json replace the
+// null after the marker comment. Schema documented in the command file.
+const DATA = /*__TOPOLOGY_DATA__*/ null;
+
+if (!DATA || !DATA.root) {
+  document.getElementById("err").style.display = "grid";
+  throw new Error("no data");
+}
+
+// ── Layout: circle-pack in a fixed world space ─────────────────────────
+// d3.pack gives every node (x, y, r) once; zooming is purely a canvas
+// transform, so the layout never recomputes and pan/zoom stays at 60fps.
+const WORLD = 8000;
+// Leaves without a meaningful LOC (data stores, screens, jobs) get a floor
+// based on the median module size so they stay visible next to code.
+const locs = [];
+(function walk(d) { if (d.children && d.children.length) d.children.forEach(walk);
+  else if (d.loc > 1) locs.push(d.loc); })(DATA.root);
+locs.sort((a, b) => a - b);
+const FLOOR = Math.max(1, Math.round((locs[Math.floor(locs.length / 2)] || 100) * 0.4));
+const root = d3.hierarchy(DATA.root, d => d.children)
+  .sum(d => (d.children && d.children.length ? 0 : Math.max(d.loc || 0, d.kind === "module" ? 1 : FLOOR)))
+  .sort((a, b) => b.value - a.value);
+d3.pack().size([WORLD, WORLD]).padding(d => Math.max(3, 24 / (d.depth + 1)))(root);
+
+const nodes = [];
+const byId = new Map();
+root.each(d => {
+  const n = { id: d.data.id, name: d.data.name, kind: d.data.kind || "module",
+    language: d.data.language || null, file: d.data.file || null,
+    loc: d.data.loc || 0, x: d.x, y: d.y, r: d.r, depth: d.depth,
+    parent: d.parent ? d.parent.data.id : null,
+    container: !!(d.children && d.children.length) };
+  nodes.push(n); byId.set(n.id, n);
+});
+nodes.sort((a, b) => b.r - a.r); // painters: parents under children
+
+const entrySet = new Set(DATA.entryPoints || []);
+const edges = (DATA.edges || []).filter(e => byId.has(e.source) && byId.has(e.target));
+const fanIn = new Map(), fanOut = new Map();
+for (const e of edges) {
+  fanOut.set(e.source, (fanOut.get(e.source) || 0) + 1);
+  fanIn.set(e.target, (fanIn.get(e.target) || 0) + 1);
+}
+
+// ── Colors ──────────────────────────────────────────────────────────────
+const KIND_FILL = { system: "#1e1e1e", domain: null, module: "#4a6580",
+  datastore: "#3d6a5a", job: "#7a5d8a", screen: "#8a6d4a" };
+const LANG_FILL = { cobol: "#5e7a9e", java: "#9a6848", c: "#6e6a58",
+  "c++": "#6e6a58", python: "#5a7850", javascript: "#9a8348",
+  typescript: "#4a6580", csharp: "#5f7a5f", rpg: "#7d6580", pl1: "#806858",
+  natural: "#587a78", sql: "#3d6a5a" };
+const EDGE_STYLE = {
+  call:     { color: "rgba(201,182,144,0.30)", label: "calls" },
+  dispatch: { color: "rgba(160,130,200,0.35)", label: "dynamic dispatch" },
+  read:     { color: "rgba(91,160,224,0.30)",  label: "reads" },
+  write:    { color: "rgba(224,122,82,0.40)",  label: "writes" },
+};
+function fillFor(n) {
+  if (n.kind === "domain" || (n.container && n.kind !== "system"))
+    return n.depth % 2 ? "#2d2d2d" : "#262626";
+  if (n.kind !== "module" && KIND_FILL[n.kind]) return KIND_FILL[n.kind];
+  return (n.language && LANG_FILL[n.language.toLowerCase()]) || "#4a6580";
+}
+
+// ── State ───────────────────────────────────────────────────────────────
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+let transform = d3.zoomIdentity;
+let hovered = null, selected = null, activeFlow = null;
+const kindOn = Object.fromEntries(Object.keys(EDGE_STYLE).map(k => [k, true]));
+
+// ── Render ──────────────────────────────────────────────────────────────
+const MIN_R = 1.5, LABEL_R = 22, REVEAL_R = 55;
+let raf = null;
+const requestDraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = null; draw(); }); };
+
+function visible(n, k, tx, ty, vw, vh) {
+  const sx = n.x * k + tx, sy = n.y * k + ty, sr = n.r * k;
+  return sx + sr > -60 && sx - sr < vw + 60 && sy + sr > -60 && sy - sr < vh + 60;
+}
+
+function flowNodeSet() {
+  if (!activeFlow) return null;
+  const s = new Set();
+  for (const step of activeFlow.steps) for (const id of step.nodes || []) s.add(id);
+  return s;
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const vw = innerWidth, vh = innerHeight;
+  if (canvas.width !== vw * dpr) { canvas.width = vw * dpr; canvas.style.width = vw + "px"; }
+  if (canvas.height !== vh * dpr) { canvas.height = vh * dpr; canvas.style.height = vh + "px"; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#1e1e1e"; ctx.fillRect(0, 0, vw, vh);
+
+  const { x: tx, y: ty, k } = transform;
+  const flowSet = flowNodeSet();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+
+  // Nodes
+  for (const n of nodes) {
+    const sr = n.r * k;
+    if (sr < MIN_R) continue;
+    if (n.parent) {
+      const p = byId.get(n.parent);
+      if (p && p.r * k < REVEAL_R) continue; // LOD: reveal children gradually
+    }
+    if (!visible(n, k, tx, ty, vw, vh)) continue;
+    const sx = n.x * k + tx, sy = n.y * k + ty;
+    const inFlow = flowSet ? flowSet.has(n.id) : true;
+    const isSel = selected === n.id, isHov = hovered === n.id;
+
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.globalAlpha = (n.container ? 0.55 : 0.85) * (inFlow ? 1 : 0.18);
+    ctx.fillStyle = isSel ? "rgba(204,120,92,0.25)" : fillFor(n);
+    ctx.fill(); ctx.globalAlpha = 1;
+    ctx.lineWidth = isSel ? 2.5 : isHov ? 1.8 : n.container ? 1 : 0.8;
+    ctx.strokeStyle = isSel || isHov ? "#cc785c"
+      : entrySet.has(n.id) ? "rgba(204,120,92,0.9)"
+      : n.container ? "#3a3a3a" : "rgba(212,212,212,0.18)";
+    if (entrySet.has(n.id) && !isSel && !isHov) ctx.lineWidth = 1.6;
+    ctx.globalAlpha = inFlow ? 1 : 0.25; ctx.stroke(); ctx.globalAlpha = 1;
+
+    if (sr > LABEL_R) {
+      const fs = Math.min(17, Math.max(9, sr / 6));
+      ctx.font = `${n.container ? "600" : "400"} ${fs}px system-ui, sans-serif`;
+      ctx.fillStyle = n.container ? "#8a8a8a" : "#e8e8e8";
+      ctx.globalAlpha = inFlow ? 1 : 0.3;
+      const ly = n.container && sr > 55 ? sy - sr + fs + 5 : sy;
+      const label = n.name.length > 28 ? n.name.slice(0, 26) + "…" : n.name;
+      ctx.fillText(label, sx, ly);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Edges: batched per kind, endpoints must both be on screen
+  const vis = id => { const n = byId.get(id); return n && n.r * k > MIN_R * 2 && visible(n, k, tx, ty, vw, vh); };
+  const curve = (a, b) => {
+    const ax = a.x * k + tx, ay = a.y * k + ty, bx = b.x * k + tx, by = b.y * k + ty;
+    if ((ax - bx) ** 2 + (ay - by) ** 2 < 120) return;
+    ctx.moveTo(ax, ay);
+    ctx.quadraticCurveTo((ax + bx) / 2 + (by - ay) * 0.12, (ay + by) / 2 + (ax - bx) * 0.12, bx, by);
+  };
+  if (!flowSet) {
+    for (const [kind, style] of Object.entries(EDGE_STYLE)) {
+      if (!kindOn[kind]) continue;
+      ctx.strokeStyle = style.color; ctx.lineWidth = 0.8; ctx.beginPath();
+      let drawn = 0;
+      for (const e of edges) {
+        if (e.kind !== kind || !vis(e.source) || !vis(e.target)) continue;
+        curve(byId.get(e.source), byId.get(e.target));
+        if (++drawn > 1200) break;
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Focus edges (hover/selection) in accent, on top
+  const focus = hovered || selected;
+  if (focus && !flowSet) {
+    ctx.strokeStyle = "#cc785c"; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (const e of edges) {
+      if (e.source !== focus && e.target !== focus) continue;
+      const a = byId.get(e.source), b = byId.get(e.target);
+      if (a && b) curve(a, b);
+    }
+    ctx.stroke();
+  }
+
+  // Active flow: numbered step path
+  if (flowSet) {
+    ctx.strokeStyle = "#cc785c"; ctx.lineWidth = 2;
+    const seq = activeFlow.steps.flatMap(s => s.nodes || []);
+    ctx.beginPath();
+    for (let i = 0; i + 1 < seq.length; i++) {
+      const a = byId.get(seq[i]), b = byId.get(seq[i + 1]);
+      if (a && b) curve(a, b);
+    }
+    ctx.stroke();
+    seq.forEach((id, i) => {
+      const n = byId.get(id); if (!n) return;
+      const sx = n.x * k + tx, sy = n.y * k + ty - n.r * k - 10;
+      ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+      ctx.fillStyle = "#cc785c"; ctx.fill();
+      ctx.fillStyle = "#1e1e1e"; ctx.font = "700 11px system-ui, sans-serif";
+      ctx.fillText(String(i + 1), sx, sy + 0.5);
+    });
+  }
+}
+
+// ── Zoom / pan / hit-testing ────────────────────────────────────────────
+const zoomB = d3.zoom().scaleExtent([0.05, 600])
+  .on("zoom", ev => { transform = ev.transform; requestDraw(); })
+  .on("start", () => canvas.classList.add("dragging"))
+  .on("end", () => canvas.classList.remove("dragging"));
+const sel = d3.select(canvas).call(zoomB).on("dblclick.zoom", null);
+
+function hit(mx, my) {
+  const wx = (mx - transform.x) / transform.k, wy = (my - transform.y) / transform.k;
+  let best = null;
+  for (const n of nodes) {
+    if (n.r * transform.k < MIN_R) continue;
+    const dx = wx - n.x, dy = wy - n.y;
+    if (dx * dx + dy * dy <= n.r * n.r && (!best || n.r < best.r)) best = n;
+  }
+  return best;
+}
+function flyTo(n) {
+  const vw = innerWidth, vh = innerHeight, cur = transform;
+  const from = [(vw / 2 - cur.x) / cur.k, (vh / 2 - cur.y) / cur.k, Math.min(vw, vh) / cur.k];
+  const interp = d3.interpolateZoom(from, [n.x, n.y, n.r * 2.6]);
+  const dur = Math.max(400, interp.duration * 0.55), t0 = performance.now();
+  (function step() {
+    const t = Math.min(1, (performance.now() - t0) / dur);
+    const [cx, cy, w] = interp(d3.easeCubicInOut(t));
+    const k = Math.min(vw, vh) / w;
+    sel.call(zoomB.transform, d3.zoomIdentity.translate(vw / 2 - cx * k, vh / 2 - cy * k).scale(k));
+    if (t < 1) requestAnimationFrame(step);
+  })();
+}
+canvas.addEventListener("mousemove", e => {
+  const h = hit(e.offsetX, e.offsetY);
+  const id = h ? h.id : null;
+  if (id !== hovered) { hovered = id; canvas.style.cursor = h ? "pointer" : "grab"; requestDraw(); }
+});
+canvas.addEventListener("click", e => {
+  const h = hit(e.offsetX, e.offsetY);
+  selected = h ? h.id : null;
+  renderSidebar(); requestDraw();
+});
+canvas.addEventListener("dblclick", e => { const h = hit(e.offsetX, e.offsetY); if (h) flyTo(h); });
+addEventListener("keydown", e => {
+  if (e.key === "Escape") { selected = null; setFlow(""); flyTo(byId.get(DATA.root.id)); renderSidebar(); }
+});
+addEventListener("resize", requestDraw);
+
+// ── Sidebar ─────────────────────────────────────────────────────────────
+const sidebar = document.getElementById("sidebar");
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function renderSidebar() {
+  if (activeFlow) return renderFlowSidebar();
+  if (!selected) { sidebar.classList.remove("open"); return; }
+  const n = byId.get(selected);
+  const neighbors = [];
+  for (const e of edges) {
+    if (e.source === n.id) neighbors.push({ id: e.target, rel: EDGE_STYLE[e.kind]?.label || e.kind, dir: "→" });
+    else if (e.target === n.id) neighbors.push({ id: e.source, rel: EDGE_STYLE[e.kind]?.label || e.kind, dir: "←" });
+  }
+  sidebar.innerHTML = `
+    <span class="closebtn" id="close">×</span>
+    <h2>${esc(n.name)}</h2>
+    <div class="meta">${esc(n.kind)}${n.language ? " · " + esc(n.language) : ""}${n.loc ? " · " + n.loc.toLocaleString() + " LOC" : ""}</div>
+    <div>${entrySet.has(n.id) ? '<span class="badge entry">entry point</span>' : ""}
+      <span class="badge">fan-in ${fanIn.get(n.id) || 0}</span>
+      <span class="badge">fan-out ${fanOut.get(n.id) || 0}</span></div>
+    ${n.file ? `<h3>Source</h3><div class="meta">${esc(n.file)}</div>` : ""}
+    ${neighbors.length ? `<h3>Connections (${neighbors.length})</h3>` +
+      neighbors.slice(0, 40).map(x => `<span class="link" data-id="${esc(x.id)}">${x.dir} ${esc(byId.get(x.id)?.name || x.id)} <span class="kind">${esc(x.rel)}</span></span>`).join("") +
+      (neighbors.length > 40 ? `<div class="meta">…and ${neighbors.length - 40} more</div>` : "") : ""}`;
+  sidebar.classList.add("open");
+  sidebar.querySelector("#close").onclick = () => { selected = null; renderSidebar(); requestDraw(); };
+  sidebar.querySelectorAll(".link").forEach(el => el.onclick = () => {
+    const t = byId.get(el.dataset.id);
+    if (t) { selected = t.id; flyTo(t); renderSidebar(); requestDraw(); }
+  });
+}
+function renderFlowSidebar() {
+  const f = activeFlow;
+  sidebar.innerHTML = `
+    <span class="closebtn" id="close">×</span>
+    <h2>${esc(f.name)}</h2>
+    <div class="meta">${f.persona ? "Persona: " + esc(f.persona) : ""}</div>
+    ${f.description ? `<p style="font-size:13px">${esc(f.description)}</p>` : ""}
+    <h3>Steps</h3>
+    <ol>${f.steps.map(s => `<li>${esc(s.label)}${(s.nodes || []).length ?
+      `<div class="meta">${s.nodes.map(id => esc(byId.get(id)?.name || id)).join(" → ")}</div>` : ""}</li>`).join("")}</ol>`;
+  sidebar.classList.add("open");
+  sidebar.querySelector("#close").onclick = () => setFlow("");
+}
+
+// ── Search ──────────────────────────────────────────────────────────────
+const searchEl = document.getElementById("search"), resultsEl = document.getElementById("results");
+searchEl.addEventListener("input", () => {
+  const q = searchEl.value.trim().toLowerCase();
+  resultsEl.innerHTML = "";
+  if (q.length < 2) return;
+  nodes.filter(n => n.name.toLowerCase().includes(q)).slice(0, 12).forEach(n => {
+    const d = document.createElement("div");
+    d.innerHTML = `${esc(n.name)}<span class="kind">${esc(n.kind)}</span>`;
+    d.onclick = () => { selected = n.id; flyTo(n); renderSidebar(); requestDraw(); };
+    resultsEl.appendChild(d);
+  });
+});
+
+// ── Edge-kind toggles & legend ──────────────────────────────────────────
+const togglesEl = document.getElementById("toggles");
+for (const [kind, style] of Object.entries(EDGE_STYLE)) {
+  if (!edges.some(e => e.kind === kind)) continue;
+  const solid = style.color.replace(/[\d.]+\)$/, "0.9)");
+  const l = document.createElement("label");
+  l.innerHTML = `<input type="checkbox" checked><span class="swatch" style="background:${solid}"></span>${style.label}`;
+  l.querySelector("input").onchange = ev => { kindOn[kind] = ev.target.checked; requestDraw(); };
+  togglesEl.appendChild(l);
+}
+if (!togglesEl.children.length) togglesEl.style.display = "none";
+
+// ── Flows ───────────────────────────────────────────────────────────────
+const flowsPanel = document.getElementById("flows"), flowSel = document.getElementById("flowSel");
+const flows = DATA.flows || [];
+if (flows.length) {
+  flowsPanel.style.display = "";
+  flows.forEach((f, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = f.persona ? `${f.name} (${f.persona})` : f.name;
+    flowSel.appendChild(o);
+  });
+  flowSel.onchange = () => setFlow(flowSel.value);
+}
+function setFlow(v) {
+  flowSel.value = v;
+  activeFlow = v === "" ? null : flows[+v];
+  selected = null;
+  if (activeFlow) {
+    const ids = activeFlow.steps.flatMap(s => s.nodes || []);
+    const pts = ids.map(id => byId.get(id)).filter(Boolean);
+    if (pts.length) {
+      const minX = Math.min(...pts.map(n => n.x - n.r)), maxX = Math.max(...pts.map(n => n.x + n.r));
+      const minY = Math.min(...pts.map(n => n.y - n.r)), maxY = Math.max(...pts.map(n => n.y + n.r));
+      flyTo({ x: (minX + maxX) / 2, y: (minY + maxY) / 2, r: Math.max(maxX - minX, maxY - minY) / 2 || 100 });
+    }
+  }
+  renderSidebar(); requestDraw();
+  if (!activeFlow) sidebar.classList.remove("open");
+}
+
+// ── Observations ────────────────────────────────────────────────────────
+if ((DATA.observations || []).length) {
+  document.getElementById("obs").style.display = "";
+  document.getElementById("obsList").innerHTML =
+    DATA.observations.map(o => `<li style="margin:4px 0">${esc(o)}</li>`).join("");
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────
+document.getElementById("title").textContent = DATA.system || DATA.root.name || "System topology";
+document.getElementById("stats").textContent =
+  `${nodes.filter(n => !n.container).length} modules · ${edges.length} edges` +
+  (entrySet.size ? ` · ${entrySet.size} entry points` : "");
+{
+  const vw = innerWidth, vh = innerHeight;
+  const k = Math.min(vw, vh) / (WORLD * 1.05);
+  sel.call(zoomB.transform, d3.zoomIdentity.translate(vw / 2 - WORLD / 2 * k, vh / 2 - WORLD / 2 * k).scale(k));
+}
+requestDraw();
+</script>
+</body>
+</html>

@@ -9,7 +9,24 @@ equivalence.
 This is a surgical, single-module transformation — one vertical slice of the
 strangler fig. Output goes to `modernized/$1/$2/`.
 
-## Step 0 — Plan (HITL gate)
+## Step 0a — Toolchain check (fail fast)
+
+Verify the build environment **before** planning, not when the tests
+first run:
+
+- **Target stack ($3):** runtime, package manager, and test framework all
+  respond (`java -version` + `mvn -v`, `node -v` + `npm -v`,
+  `python3 -V` + `pytest --version`, …).
+- **Legacy stack (if equivalence tests will execute legacy code):** the
+  compiler/interpreter works on this codebase — run a syntax-only compile
+  of the module being transformed (e.g. `cobc -fsyntax-only`).
+
+If anything is missing or the smoke compile fails, stop and report what
+to install or fix — suggest `/modernize-preflight $1 $3` for the full
+readiness report. Don't enter plan mode on a machine that can't run the
+proof.
+
+## Step 0b — Plan (HITL gate)
 
 Read the source module and any business rules in `analysis/$1/BUSINESS_RULES.md`
 that reference it. Then **enter plan mode** and present:

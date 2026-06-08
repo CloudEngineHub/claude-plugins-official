@@ -36,23 +36,32 @@ fewest-dependencies first. For each phase:
 
 Render the phases as a Mermaid `gantt` chart.
 
-### 4. Behavior Contract
+### 4. Business Walkthroughs
+For each persona flow in `analysis/$1/topology.json` (`flows` — produced
+by `/modernize-map`), a short narrative table: persona, what happens in
+business language, which legacy modules implement it today, and which
+phase from §3 replaces each. This is the section non-technical approvers
+actually read — it connects "Phase 2" to "what happens when a customer
+files a claim". If topology.json has no flows, derive 2–3 walkthroughs
+from the entry points and say they need SME confirmation.
+
+### 5. Behavior Contract
 List the **P0 rules** from BUSINESS_RULES.md (the ones tagged `Priority: P0` —
 money, regulatory, data integrity) that MUST be proven equivalent before any
 phase ships. These become the regression suite. Flag any P0 rule with
 Confidence < High as a blocker requiring SME confirmation before its phase
 starts.
 
-### 5. Validation Strategy
+### 6. Validation Strategy
 State which combination applies: characterization tests, contract tests,
 parallel-run / dual-execution diff, property-based tests, manual UAT.
 Justify per phase.
 
-### 6. Open Questions
+### 7. Open Questions
 Anything requiring human/SME decision before Phase 1 starts. Each as a
 checkbox the approver must tick.
 
-### 7. Approval Block
+### 8. Approval Block
 ```
 Approved by: ________________  Date: __________
 Approval covers: Phase 1 only | Full plan
