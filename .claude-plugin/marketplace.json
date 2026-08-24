@@ -2354,7 +2354,7 @@
         "url": "https://github.com/mongodb/agent-skills.git",
         "path": "plugins/mongodb-atlas",
         "ref": "main",
-        "sha": "b4ea8150a020b9babaddc6c271c6dc177c06a83f"
+        "sha": "03740fc6092ba0865b88ed37ad58f931f15af0cc"
       },
       "homepage": "https://www.mongodb.com/docs/mcp-server/get-started/"
     },
