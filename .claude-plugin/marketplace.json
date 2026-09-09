@@ -2886,7 +2886,7 @@
         "url": "https://github.com/qodo-ai/qodo-skills.git",
         "path": "packages/qodo-standards",
         "ref": "main",
-        "sha": "3f017b1f2e13dbf9feb532143dc39fa4eea12479"
+        "sha": "20aa566f556171e57bb585998ebd4c91596aa2f0"
       },
       "homepage": "https://github.com/qodo-ai/qodo-skills.git"
     },
