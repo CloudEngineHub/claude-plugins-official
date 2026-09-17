@@ -2750,7 +2750,7 @@
         "url": "https://github.com/pendo-io/claude-pendo-plugin.git",
         "path": "plugins/pendo-analytics",
         "ref": "main",
-        "sha": "a4699be3608ba134d8c7aa4b53e220cfde1c6aac"
+        "sha": "a08842848e416be803e99184130aefca6ec9afd3"
       },
       "homepage": "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/pendo-analytics"
     },
