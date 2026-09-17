@@ -925,7 +925,7 @@
         "url": "https://github.com/clay-run/agent-plugins.git",
         "path": "clay",
         "ref": "main",
-        "sha": "769ca4a37a63da6d079f6daf9aa579caed3b6639"
+        "sha": "86f0471654c2c855ad0346cd30a74c0f4ca85d7f"
       },
       "homepage": "https://github.com/clay-run/agent-plugins/tree/main/clay"
     },
