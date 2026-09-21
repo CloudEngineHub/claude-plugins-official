@@ -2783,7 +2783,7 @@
         "url": "https://github.com/pendo-io/claude-pendo-plugin.git",
         "path": "plugins/pendo-guides",
         "ref": "main",
-        "sha": "a4699be3608ba134d8c7aa4b53e220cfde1c6aac"
+        "sha": "340d503c23eed487be83693aa4c1837df4a7dcd4"
       },
       "homepage": "https://github.com/pendo-io/claude-pendo-plugin/tree/main/plugins/pendo-guides"
     },
