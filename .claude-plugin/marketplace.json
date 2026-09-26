@@ -2155,7 +2155,7 @@
         "url": "https://github.com/linq-lab/linq-alpha-plugin.git",
         "path": "plugins/linq-alpha",
         "ref": "main",
-        "sha": "42202fdd4bd1cbb373c1f11a4114f173edffc437"
+        "sha": "0e79c288be9a50ba5ab6234747fe1cc2cb8e15e2"
       },
       "homepage": "https://www.linqalpha.com"
     },
