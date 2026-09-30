@@ -2991,7 +2991,7 @@
         "url": "https://github.com/preset-io/agent-skills.git",
         "path": "plugins/preset-cli-skills",
         "ref": "master",
-        "sha": "73d26746350d3371bb0c854892b98387553560ea"
+        "sha": "7731b7f0ab984de922da5f0ff5b504257025eff8"
       },
       "homepage": "https://www.preset.io"
     },
